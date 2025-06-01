@@ -1,0 +1,3 @@
+[console_scripts]
+p2l_infer = piano_to_lilypond.infer:main
+p2l_train = piano_to_lilypond.train:main

@@ -1,0 +1,14 @@
+README.md
+setup.py
+src/piano_to_lilypond/__init__.py
+src/piano_to_lilypond/config.py
+src/piano_to_lilypond/dataset.py
+src/piano_to_lilypond/infer.py
+src/piano_to_lilypond/model.py
+src/piano_to_lilypond/train.py
+src/piano_to_lilypond.egg-info/PKG-INFO
+src/piano_to_lilypond.egg-info/SOURCES.txt
+src/piano_to_lilypond.egg-info/dependency_links.txt
+src/piano_to_lilypond.egg-info/entry_points.txt
+src/piano_to_lilypond.egg-info/requires.txt
+src/piano_to_lilypond.egg-info/top_level.txt
