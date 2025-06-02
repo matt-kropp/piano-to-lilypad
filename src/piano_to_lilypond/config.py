@@ -35,8 +35,8 @@ DROPOUT = 0.1
 # NUM_ATTENTION_HEADS = 8
 # FEEDFORWARD_DIM = 2048
 
-# Training (Optimized for A100 - balanced memory usage)
-BATCH_SIZE = 12  # Reduced from 16 to stay under memory limit
+# Training (Optimized for A100 - windowing approach)
+BATCH_SIZE = 24  # Increased since sequences are much shorter and predictable
 LEARNING_RATE = 1.5e-4  # Slightly increased for larger batch
 NUM_EPOCHS = 100
 WARMUP_STEPS = 2000
@@ -44,10 +44,12 @@ WEIGHT_DECAY = 1e-2
 TOTAL_STEPS = 100000  # Reduced since more efficient training
 AUX_CTC_WEIGHT = 0.3
 
-# Memory management (A100 optimized - balanced)
-MAX_AUDIO_LENGTH = 100000  # Increased from 50k (~50 seconds of audio)
-MAX_MIDI_LENGTH = 8000     # Increased from 5k tokens
-GRADIENT_ACCUMULATION_STEPS = 3  # Adjusted to maintain effective batch size of 36
+# Memory management (A100 optimized - windowing approach)
+WINDOW_SIZE_SECONDS = 30    # Fixed 30-second windows
+WINDOW_OVERLAP_SECONDS = 5  # 5-second overlap between windows
+MAX_AUDIO_LENGTH = int(WINDOW_SIZE_SECONDS * SAMPLE_RATE / HOP_LENGTH)  # ~30k frames for 30 seconds
+MAX_MIDI_LENGTH = 3000      # Reduced to match 30-second windows
+GRADIENT_ACCUMULATION_STEPS = 2  # Back to 2 since sequences are shorter
 
 # Inference
 BEAM_SIZE = 3

@@ -5,54 +5,79 @@ from torch.utils.data import Dataset
 import numpy as np
 from .utils.audio_utils import load_audio, compute_mel_spectrogram
 from .utils.midi_utils import midi_to_token_sequence, token_to_id, build_vocab
-from .config import SAMPLE_RATE, N_MELS, HOP_LENGTH, WIN_LENGTH, MAX_AUDIO_LENGTH
+from .config import (SAMPLE_RATE, N_MELS, HOP_LENGTH, WIN_LENGTH, MAX_AUDIO_LENGTH, 
+                     WINDOW_SIZE_SECONDS, WINDOW_OVERLAP_SECONDS, MAX_MIDI_LENGTH)
 
 class PianoDataset(Dataset):
-    def __init__(self, data_list, max_seq_len=10000, max_audio_len=None):
+    def __init__(self, data_list, max_seq_len=None, max_audio_len=None):
         """
         data_list: list of tuples (audio_path, midi_path)
-        max_seq_len: maximum length for MIDI token sequences
-        max_audio_len: maximum length for audio sequences (in mel frames)
+        Creates windowed examples from each audio/MIDI pair
         """
         self.data_list = data_list
-        self.max_seq_len = max_seq_len
+        self.max_seq_len = max_seq_len or MAX_MIDI_LENGTH
         self.max_audio_len = max_audio_len or MAX_AUDIO_LENGTH
+        self.window_samples = int(WINDOW_SIZE_SECONDS * SAMPLE_RATE)
+        self.overlap_samples = int(WINDOW_OVERLAP_SECONDS * SAMPLE_RATE)
+        self.step_samples = self.window_samples - self.overlap_samples
+        
+        # Pre-compute all windows for efficient indexing
+        self.windows = self._create_windows()
+        print(f"Created {len(self.windows)} windowed examples from {len(data_list)} files")
+
+    def _create_windows(self):
+        """Pre-compute all valid windows from the dataset"""
+        windows = []
+        
+        for audio_path, midi_path in self.data_list:
+            try:
+                # Quick check - skip obviously huge files
+                audio_size = os.path.getsize(audio_path) / (1024 * 1024)  # MB
+                if audio_size > 1000:  # Skip files larger than 1GB
+                    continue
+                    
+                # Load audio to determine length
+                wav = load_audio(audio_path, SAMPLE_RATE)
+                audio_length = len(wav)
+                
+                # Create windows for this file
+                start = 0
+                while start + self.window_samples <= audio_length:
+                    end = start + self.window_samples
+                    windows.append((audio_path, midi_path, start, end))
+                    start += self.step_samples
+                    
+                # Add final partial window if significant length remains
+                if start < audio_length and (audio_length - start) > self.window_samples // 2:
+                    windows.append((audio_path, midi_path, audio_length - self.window_samples, audio_length))
+                    
+            except Exception as e:
+                print(f"Warning: Failed to process {audio_path}: {e}")
+                continue
+                
+        return windows
 
     def __len__(self):
-        return len(self.data_list)
+        return len(self.windows)
 
     def __getitem__(self, idx):
-        audio_path, midi_path = self.data_list[idx]
+        audio_path, midi_path, start_sample, end_sample = self.windows[idx]
         
         try:
-            # Check file sizes before loading to prevent memory issues
-            audio_size = os.path.getsize(audio_path) / (1024 * 1024)  # Size in MB
-            if audio_size > 500:  # Increased from 100MB - only skip truly massive files
-                raise ValueError(f"Audio file too large: {audio_size:.1f}MB")
-            
+            # Load audio window
             wav = load_audio(audio_path, SAMPLE_RATE)
+            wav_window = wav[start_sample:end_sample]
             
-            # Early check for audio length to prevent processing huge files
-            estimated_frames = len(wav) // HOP_LENGTH
-            if estimated_frames > self.max_audio_len * 3:  # More permissive - allow up to 3x max length since we chunk
-                print(f"Warning: Audio file {audio_path} is very long ({estimated_frames} frames), skipping...")
-                raise ValueError(f"Audio too long: {estimated_frames} frames")
+            # Pad if needed (for final partial windows)
+            if len(wav_window) < self.window_samples:
+                padding = self.window_samples - len(wav_window)
+                wav_window = np.pad(wav_window, (0, padding), mode='constant')
             
-            mel = compute_mel_spectrogram(wav, SAMPLE_RATE, N_MELS, HOP_LENGTH, WIN_LENGTH)
-            
-            # Limit audio length to prevent memory issues
+            # Compute mel spectrogram
+            mel = compute_mel_spectrogram(wav_window, SAMPLE_RATE, N_MELS, HOP_LENGTH, WIN_LENGTH)
             T = mel.shape[1]
-            if T > self.max_audio_len:
-                # Take a random chunk from the audio
-                start_idx = random.randint(0, T - self.max_audio_len)
-                mel = mel[:, start_idx:start_idx + self.max_audio_len]
-                T = self.max_audio_len
             
-            # Skip very short files (less than 1 second)
-            if T < 100:  # ~1 second at default settings
-                raise ValueError(f"Audio too short: {T} frames")
-                
-            # Stack ±2 frames for context window if desired; pad at edges
+            # Stack ±2 frames for context window
             stacked = []
             stack_size = 5
             for t in range(T):
@@ -63,35 +88,37 @@ class PianoDataset(Dataset):
                 stacked.append(np.stack(frames, axis=0))  # [5, N_MELS]
             src = np.stack(stacked, axis=0)  # [T, 5, N_MELS]
             
-            # Convert to torch.FloatTensor with memory cleanup
+            # Convert to torch.FloatTensor
             src = torch.from_numpy(src).float()
-            del mel, stacked  # Clean up intermediate arrays
+            del mel, stacked  # Clean up
 
-            # MIDI → token IDs
+            # Load MIDI and extract corresponding time window
             token_seq = midi_to_token_sequence(midi_path)
+            
+            # For windowing, we take the full MIDI sequence but limit its length
+            # In practice, you might want to align MIDI timing with audio windows
+            # For now, we'll just use the full sequence truncated to max length
             tgt = [token_to_id[t] for t in token_seq if t in token_to_id]
             if len(tgt) > self.max_seq_len:
-                tgt = tgt[:self.max_seq_len-1] + [token_to_id['EOS']]
+                # Take a random chunk of the MIDI sequence
+                if len(tgt) > self.max_seq_len:
+                    start_idx = random.randint(0, len(tgt) - self.max_seq_len)
+                    tgt = tgt[start_idx:start_idx + self.max_seq_len]
             
-            # Skip files with very short MIDI sequences
+            # Ensure minimum sequence length
             if len(tgt) < 10:
-                raise ValueError(f"MIDI sequence too short: {len(tgt)} tokens")
+                tgt = [token_to_id['EOS']] * 10
                 
             tgt = torch.LongTensor(tgt)
 
             return src, tgt
             
         except Exception as e:
-            # Return a fallback item or skip
-            print(f"Warning: Skipping {audio_path}: {e}")
-            # Return the first item as fallback (recursive call with idx=0)
-            if idx != 0:
-                return self.__getitem__(0)
-            else:
-                # Create minimal dummy data as absolute fallback
-                dummy_src = torch.zeros(1000, 5, N_MELS)
-                dummy_tgt = torch.LongTensor([token_to_id['EOS']])
-                return dummy_src, dummy_tgt
+            # Fallback to dummy data
+            print(f"Warning: Error processing window {idx}: {e}")
+            dummy_src = torch.zeros(self.max_audio_len // 4, 5, N_MELS)  # Rough estimate of mel frames
+            dummy_tgt = torch.LongTensor([token_to_id['EOS']] * 10)
+            return dummy_src, dummy_tgt
 
     @staticmethod
     def collate_fn(batch):
