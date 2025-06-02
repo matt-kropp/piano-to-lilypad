@@ -36,8 +36,8 @@ DROPOUT = 0.1
 # FEEDFORWARD_DIM = 2048
 
 # Training (Optimized for A100 - windowing approach)
-BATCH_SIZE = 64  # Increased from 12 to 64 - should still be safe with 40GB
-LEARNING_RATE = 2e-4  # Increased for larger batch
+BATCH_SIZE = 16  # Reduced from 64 to 16 - conservative start
+LEARNING_RATE = 1.5e-4  # Adjusted for smaller batch
 NUM_EPOCHS = 100
 WARMUP_STEPS = 2000
 WEIGHT_DECAY = 1e-2

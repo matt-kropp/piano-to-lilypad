@@ -4,6 +4,7 @@ import torch
 import random 
 import psutil
 import gc
+import time
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import LambdaLR
@@ -113,16 +114,31 @@ def main():
         total_loss = 0.0
         total_batches = len(train_loader)
         
-        print(f"📊 Processing {total_batches} batches...")
+        # Enhanced progress tracking
+        epoch_start_time = time.time()
+        last_log_time = epoch_start_time
+        
+        print(f"📊 Processing {total_batches} batches (batch size {BATCH_SIZE})...")
         
         for step, (src, tgt) in enumerate(train_loader):
             try:
-                if step % 10 == 0:
-                    progress = step / total_batches * 100
-                    print(f"  📈 Batch {step+1}/{total_batches} ({progress:.1f}%)")
+                # Enhanced progress reporting every 10 batches or every 30 seconds
+                current_time = time.time()
+                if step % 10 == 0 or (current_time - last_log_time) > 30:
+                    elapsed = current_time - epoch_start_time
+                    if step > 0:
+                        estimated_total = elapsed * total_batches / step
+                        remaining = estimated_total - elapsed
+                        print(f"  📈 Batch {step+1}/{total_batches} ({(step+1)/total_batches*100:.1f}%) | "
+                              f"Elapsed: {elapsed/60:.1f}m | ETA: {remaining/60:.1f}m")
+                    else:
+                        print(f"  📈 Batch {step+1}/{total_batches} ({(step+1)/total_batches*100:.1f}%) | Starting...")
+                    
                     if torch.cuda.is_available():
                         gpu_mem = torch.cuda.memory_allocated() / 1024**3
                         print(f"  🧠 GPU Memory: {gpu_mem:.1f}GB")
+                    
+                    last_log_time = current_time
                 
                 src = src.to(DEVICE, non_blocking=True)
                 tgt = tgt.to(DEVICE, non_blocking=True)
@@ -162,8 +178,9 @@ def main():
                 optimizer.zero_grad()
                 total_loss += loss.item()
                 
-                if step % 10 == 0:
-                    print(f"    💰 Loss: {loss.item():.4f} | LR: {scheduler.get_last_lr()[0]:.2e}")
+                # More frequent loss reporting
+                if step % 5 == 0:  # Every 5 batches for subset (more frequent since fewer total)
+                    print(f"    ⚡ Step {step+1} | Loss: {loss.item():.4f} | LR: {scheduler.get_last_lr()[0]:.2e}")
                 
             except RuntimeError as e:
                 if "out of memory" in str(e):
@@ -173,8 +190,13 @@ def main():
                 else:
                     raise e
         
+        # Enhanced epoch summary
+        epoch_time = time.time() - epoch_start_time
         avg_loss = total_loss / len(train_loader)
-        print(f"✅ Epoch {epoch} complete | Average Loss: {avg_loss:.4f}")
+        print(f"✅ Epoch {epoch} completed in {epoch_time/60:.1f} minutes")
+        print(f"   📊 {len(train_loader)} batches processed")
+        print(f"   📉 Average Loss: {avg_loss:.4f}")
+        print(f"   ⚡ Throughput: {len(train_loader)/epoch_time:.1f} batches/sec")
     
     print(f"\n🎉 Subset training completed successfully!")
     print(f"📊 Final GPU memory usage: {torch.cuda.memory_allocated()/1024**3:.1f}GB / 40GB")
