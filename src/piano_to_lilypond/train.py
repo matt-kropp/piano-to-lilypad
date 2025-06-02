@@ -152,10 +152,12 @@ def train_one_epoch(model, dataloader, optimizer, scheduler, epoch, scaler):
                     torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                     scaler.step(optimizer)
                     scaler.update()
+                    scheduler.step()  # Call scheduler after scaler.step()
                 else:
                     torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                     optimizer.step()
-                scheduler.step()
+                    scheduler.step()  # Call scheduler after optimizer.step()
+                
                 optimizer.zero_grad()
                 
                 total_loss += accumulation_loss
