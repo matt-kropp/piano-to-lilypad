@@ -98,7 +98,7 @@ def train_one_epoch(model, dataloader, optimizer, scheduler, epoch, scaler):
 
             # Use autocast for mixed precision training on GPU
             if torch.cuda.is_available():
-                with torch.cuda.amp.autocast():
+                with torch.amp.autocast('cuda'):
                     logits = model(src, tgt_input.transpose(0,1), tgt_mask=tgt_mask)
                     # logits: [L, B, Vocab]
                     loss_fn = torch.nn.CrossEntropyLoss(ignore_index=token_to_id['PAD'])
@@ -251,7 +251,7 @@ def main():
     check_memory()
     
     # Create mixed precision scaler for GPU training
-    scaler = torch.cuda.amp.GradScaler() if torch.cuda.is_available() else None
+    scaler = torch.amp.GradScaler('cuda') if torch.cuda.is_available() else None
     
     # Optionally, load from checkpoint
     # if os.path.exists(os.path.join(CHECKPOINT_DIR, 'latest.ckpt')):

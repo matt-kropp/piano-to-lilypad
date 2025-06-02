@@ -36,7 +36,7 @@ DROPOUT = 0.1
 # FEEDFORWARD_DIM = 2048
 
 # Training (Optimized for A100 - balanced memory usage)
-BATCH_SIZE = 16  # Increased back up to utilize A100 better
+BATCH_SIZE = 12  # Reduced from 16 to stay under memory limit
 LEARNING_RATE = 1.5e-4  # Slightly increased for larger batch
 NUM_EPOCHS = 100
 WARMUP_STEPS = 2000
@@ -47,7 +47,7 @@ AUX_CTC_WEIGHT = 0.3
 # Memory management (A100 optimized - balanced)
 MAX_AUDIO_LENGTH = 100000  # Increased from 50k (~50 seconds of audio)
 MAX_MIDI_LENGTH = 8000     # Increased from 5k tokens
-GRADIENT_ACCUMULATION_STEPS = 2  # Reduced from 4 (effective batch size = 32)
+GRADIENT_ACCUMULATION_STEPS = 3  # Adjusted to maintain effective batch size of 36
 
 # Inference
 BEAM_SIZE = 3
