@@ -12,27 +12,41 @@ N_MELS = 229
 HOP_LENGTH = 512  # ~11.6ms
 WIN_LENGTH = 2048  # ~46ms
 
-# Model hyperparameters (Optimized for A100 GPU)
-ENC_FEAT_DIM = 256  # Increased for A100
-ENC_HIDDEN_DIM = 1024  # Increased significantly for A100
-NUM_ENCODER_LAYERS = 16  # Increased from original 12
-NUM_DECODER_LAYERS = 16  # Increased from original 12
-NUM_HEADS = 16  # Increased for A100 parallel processing
-FFN_DIM = 4096  # Doubled from original 2048
+# Model architecture (A100 optimized - conservative memory)
+# Option 1: Full A100 setup (~180M params)
+HIDDEN_DIM = 1024
+NUM_ENCODER_LAYERS = 16
+NUM_DECODER_LAYERS = 16
+NUM_ATTENTION_HEADS = 16
+FEEDFORWARD_DIM = 4096
 DROPOUT = 0.1
-VOCAB_SIZE = None  # to be set after tokenization
 
-# Training (Optimized for A100)
-BATCH_SIZE = 16  # Reduced from 32 to be more conservative with memory
-LEARNING_RATE = 2e-4  # Slightly higher for larger batches
+# Option 2: Medium setup if memory issues (~90M params)
+# HIDDEN_DIM = 768
+# NUM_ENCODER_LAYERS = 12
+# NUM_DECODER_LAYERS = 12
+# NUM_ATTENTION_HEADS = 12
+# FEEDFORWARD_DIM = 3072
+
+# Option 3: Conservative setup (~45M params)
+# HIDDEN_DIM = 512
+# NUM_ENCODER_LAYERS = 8
+# NUM_DECODER_LAYERS = 8
+# NUM_ATTENTION_HEADS = 8
+# FEEDFORWARD_DIM = 2048
+
+# Training (Optimized for A100 with memory constraints)
+BATCH_SIZE = 16  # Keeping reasonable size for A100 efficiency
+LEARNING_RATE = 2e-4  # Slightly reduced due to smaller effective batch
+NUM_EPOCHS = 100
+WARMUP_STEPS = 2000
 WEIGHT_DECAY = 1e-2
-WARMUP_STEPS = 5000  # Reduced since larger batches
 TOTAL_STEPS = 100000  # Reduced since more efficient training
 AUX_CTC_WEIGHT = 0.3
 
-# Memory management (A100 optimized)
-MAX_AUDIO_LENGTH = 150000  # Reduced to prevent worker memory issues (~1.3 minutes of audio)
-GRADIENT_ACCUMULATION_STEPS = 1  # No accumulation needed with large batch size
+# Memory management (A100 optimized - conservative)
+MAX_AUDIO_LENGTH = 75000  # Reduced from 150k (~40 seconds of audio)
+GRADIENT_ACCUMULATION_STEPS = 2  # Accumulate 2 steps to maintain effective batch size of 32
 
 # Inference
 BEAM_SIZE = 3

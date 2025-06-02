@@ -3,8 +3,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import TransformerEncoder, TransformerEncoderLayer, TransformerDecoder, TransformerDecoderLayer
 from .utils.midi_utils import build_vocab, token_to_id
-from .config import ENC_FEAT_DIM, ENC_HIDDEN_DIM, NUM_ENCODER_LAYERS, \
-    NUM_DECODER_LAYERS, NUM_HEADS, FFN_DIM, DROPOUT, VOCAB_SIZE, DEVICE
+from .config import HIDDEN_DIM, NUM_ENCODER_LAYERS, \
+    NUM_DECODER_LAYERS, NUM_ATTENTION_HEADS, FEEDFORWARD_DIM, DROPOUT, DEVICE
+
+# Legacy support - map old names to new names
+ENC_FEAT_DIM = 256  # Feature dimension for conv layers
+ENC_HIDDEN_DIM = HIDDEN_DIM
+NUM_HEADS = NUM_ATTENTION_HEADS
+FFN_DIM = FEEDFORWARD_DIM
 
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model, dropout=0.1, max_len=50000):
