@@ -12,27 +12,27 @@ N_MELS = 229
 HOP_LENGTH = 512  # ~11.6ms
 WIN_LENGTH = 2048  # ~46ms
 
-# Model hyperparameters
-ENC_FEAT_DIM = 64
-ENC_HIDDEN_DIM = 256
-NUM_ENCODER_LAYERS = 6
-NUM_DECODER_LAYERS = 6
-NUM_HEADS = 4
-FFN_DIM = 1024
+# Model hyperparameters (Optimized for A100 GPU)
+ENC_FEAT_DIM = 256  # Increased for A100
+ENC_HIDDEN_DIM = 1024  # Increased significantly for A100
+NUM_ENCODER_LAYERS = 16  # Increased from original 12
+NUM_DECODER_LAYERS = 16  # Increased from original 12
+NUM_HEADS = 16  # Increased for A100 parallel processing
+FFN_DIM = 4096  # Doubled from original 2048
 DROPOUT = 0.1
 VOCAB_SIZE = None  # to be set after tokenization
 
-# Training
-BATCH_SIZE = 1
-LEARNING_RATE = 1e-4
+# Training (Optimized for A100)
+BATCH_SIZE = 32  # Large batch size for A100
+LEARNING_RATE = 2e-4  # Slightly higher for larger batches
 WEIGHT_DECAY = 1e-2
-WARMUP_STEPS = 10000
-TOTAL_STEPS = 250000
+WARMUP_STEPS = 5000  # Reduced since larger batches
+TOTAL_STEPS = 100000  # Reduced since more efficient training
 AUX_CTC_WEIGHT = 0.3
 
-# Memory management
-MAX_AUDIO_LENGTH = 20000
-GRADIENT_ACCUMULATION_STEPS = 16
+# Memory management (A100 optimized)
+MAX_AUDIO_LENGTH = 300000  # Much longer sequences (~2.7 minutes of audio)
+GRADIENT_ACCUMULATION_STEPS = 1  # No accumulation needed with large batch size
 
 # Inference
 BEAM_SIZE = 3

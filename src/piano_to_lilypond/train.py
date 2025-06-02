@@ -64,19 +64,20 @@ def create_optimizer_and_scheduler(model):
     return optimizer, scheduler
 
 
-def train_one_epoch(model, dataloader, optimizer, scheduler, epoch):
+def train_one_epoch(model, dataloader, optimizer, scheduler, epoch, scaler):
     model.train()
     total_loss = 0.0
     accumulation_loss = 0.0
     
-    # Clear cache at the start
+    # Clear GPU cache at the start
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+        torch.cuda.synchronize()
     
     for step, (src, tgt) in enumerate(dataloader):
         try:
-            src = src.to(DEVICE)  # [B, T, 5, N_MELS]
-            tgt = tgt.to(DEVICE)  # [B, L]
+            src = src.to(DEVICE, non_blocking=True)  # [B, T, 5, N_MELS] - non_blocking for GPU
+            tgt = tgt.to(DEVICE, non_blocking=True)  # [B, L]
             
             # Prepare input to decoder: shift right, feed <EOS> at start
             tgt_input = torch.cat([torch.full((tgt.size(0), 1), token_to_id['EOS'], dtype=torch.long, device=DEVICE), tgt[:, :-1]], dim=1)
@@ -85,38 +86,56 @@ def train_one_epoch(model, dataloader, optimizer, scheduler, epoch):
             tgt_mask = torch.triu(torch.ones((tgt_len, tgt_len), device=DEVICE) == 1).transpose(0, 1)
             tgt_mask = tgt_mask.float().masked_fill(tgt_mask == 0, float('-inf')).masked_fill(tgt_mask == 1, float(0.0))
 
-            logits = model(src, tgt_input.transpose(0,1), tgt_mask=tgt_mask)
-            # logits: [L, B, Vocab]
-            loss_fn = torch.nn.CrossEntropyLoss(ignore_index=token_to_id['PAD'])
-            loss = loss_fn(logits.view(-1, model.vocab_size), tgt.transpose(0,1).reshape(-1))
+            # Use autocast for mixed precision training on GPU
+            if torch.cuda.is_available():
+                with torch.cuda.amp.autocast():
+                    logits = model(src, tgt_input.transpose(0,1), tgt_mask=tgt_mask)
+                    # logits: [L, B, Vocab]
+                    loss_fn = torch.nn.CrossEntropyLoss(ignore_index=token_to_id['PAD'])
+                    loss = loss_fn(logits.view(-1, model.vocab_size), tgt.transpose(0,1).reshape(-1))
+            else:
+                logits = model(src, tgt_input.transpose(0,1), tgt_mask=tgt_mask)
+                loss_fn = torch.nn.CrossEntropyLoss(ignore_index=token_to_id['PAD'])
+                loss = loss_fn(logits.view(-1, model.vocab_size), tgt.transpose(0,1).reshape(-1))
             
             # Scale loss for gradient accumulation
             loss = loss / GRADIENT_ACCUMULATION_STEPS
             accumulation_loss += loss.item()
             
-            loss.backward()
+            # Use scaler for mixed precision if available
+            if scaler is not None:
+                scaler.scale(loss).backward()
+            else:
+                loss.backward()
             
             # Only update weights every GRADIENT_ACCUMULATION_STEPS
             if (step + 1) % GRADIENT_ACCUMULATION_STEPS == 0:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                optimizer.step()
+                if scaler is not None:
+                    scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                    optimizer.step()
                 scheduler.step()
                 optimizer.zero_grad()
                 
                 total_loss += accumulation_loss
-                if ((step + 1) // GRADIENT_ACCUMULATION_STEPS) % 50 == 0:
+                if ((step + 1) // GRADIENT_ACCUMULATION_STEPS) % 25 == 0:  # More frequent logging for A100
                     print(f"Epoch {epoch}, Step {(step+1)//GRADIENT_ACCUMULATION_STEPS}/{len(dataloader)//GRADIENT_ACCUMULATION_STEPS}, Loss: {accumulation_loss:.4f}")
                 accumulation_loss = 0.0
                 
-                # Clear cache periodically
-                if torch.cuda.is_available() and (step + 1) % (GRADIENT_ACCUMULATION_STEPS * 10) == 0:
+                # Less frequent cache clearing for GPU
+                if torch.cuda.is_available() and (step + 1) % (GRADIENT_ACCUMULATION_STEPS * 50) == 0:
                     torch.cuda.empty_cache()
                     
         except RuntimeError as e:
             if "out of memory" in str(e):
-                print(f"WARNING: Out of memory at step {step}, skipping batch")
+                print(f"WARNING: Out of memory at step {step}, clearing cache and skipping batch")
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
+                optimizer.zero_grad()
                 continue
             else:
                 raise e
@@ -124,7 +143,7 @@ def train_one_epoch(model, dataloader, optimizer, scheduler, epoch):
             print(f"WARNING: Error processing batch at step {step}: {e}")
             continue
     
-    avg_loss = total_loss / (len(dataloader) // GRADIENT_ACCUMULATION_STEPS)
+    avg_loss = total_loss / max(1, len(dataloader) // GRADIENT_ACCUMULATION_STEPS)
     print(f"Epoch {epoch} completed. Avg Loss: {avg_loss:.4f}")
     return avg_loss
 
@@ -169,8 +188,15 @@ def main():
     
     train_dataset = PianoDataset(train_pairs)
     val_dataset = PianoDataset(val_pairs)
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, collate_fn=PianoDataset.collate_fn, num_workers=0)  # num_workers=0 to avoid multiprocessing issues
-    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, collate_fn=PianoDataset.collate_fn, num_workers=0)
+    
+    # Use multiple workers for faster data loading on GPU
+    num_workers = 4 if torch.cuda.is_available() else 0
+    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, 
+                            collate_fn=PianoDataset.collate_fn, num_workers=num_workers, 
+                            pin_memory=torch.cuda.is_available(), persistent_workers=torch.cuda.is_available())
+    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, 
+                          collate_fn=PianoDataset.collate_fn, num_workers=num_workers,
+                          pin_memory=torch.cuda.is_available(), persistent_workers=torch.cuda.is_available())
 
     print("✅ Datasets created successfully")
     check_memory()
@@ -192,6 +218,9 @@ def main():
     print("✅ Model created successfully")
     check_memory()
     
+    # Create mixed precision scaler for GPU training
+    scaler = torch.cuda.amp.GradScaler() if torch.cuda.is_available() else None
+    
     # Optionally, load from checkpoint
     # if os.path.exists(os.path.join(CHECKPOINT_DIR, 'latest.ckpt')):
     #     ckpt = torch.load(os.path.join(CHECKPOINT_DIR, 'latest.ckpt'))
@@ -203,7 +232,7 @@ def main():
     print("🎵 Starting training...")
     for epoch in range(1, 11):
         print(f"\n📖 Epoch {epoch}/10")
-        train_loss = train_one_epoch(model, train_loader, optimizer, scheduler, epoch)
+        train_loss = train_one_epoch(model, train_loader, optimizer, scheduler, epoch, scaler)
         # TODO: validate on val_loader, compute metrics
         # Save checkpoint
         ckpt_path = os.path.join(CHECKPOINT_DIR, f"model_epoch{epoch}.ckpt")

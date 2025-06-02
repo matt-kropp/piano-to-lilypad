@@ -64,10 +64,19 @@ Parameters:
 
 Key configuration parameters in `src/piano_to_lilypond/config.py`:
 
-- **Audio**: 44.1kHz sample rate, 229 mel bands
-- **Model**: 12 encoder/decoder layers, 8 attention heads
-- **Training**: Batch size 16, learning rate 1e-4
-- **Vocabulary**: 818 tokens (notes, timing, dynamics, voices)
+### CPU/Local Training (Memory Constrained)
+- **Audio**: 44.1kHz sample rate, 229 mel bands, 20k frame limit
+- **Model**: 6 encoder/decoder layers, 4 attention heads, 11.8M parameters
+- **Training**: Batch size 1, gradient accumulation 16, effective batch size 16
+
+### A100 GPU Training (High Performance)
+- **Audio**: 44.1kHz sample rate, 229 mel bands, 300k frame limit (~2.7 min audio)
+- **Model**: 16 encoder/decoder layers, 16 attention heads, ~180M parameters
+- **Training**: Batch size 32, mixed precision, 4 data workers
+- **Memory**: Up to 40GB VRAM utilization
+- **Features**: Mixed precision training, optimized data loading, norm_first transformers
+
+To switch between configurations, modify the parameters in `config.py` based on your hardware.
 
 ## Data Format
 

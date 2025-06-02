@@ -61,13 +61,17 @@ class PianoTransformer(nn.Module):
         self.conv2 = nn.Conv1d(in_channels=ENC_FEAT_DIM, out_channels=ENC_FEAT_DIM, kernel_size=5, stride=2, padding=2)
         self.enc_input_proj = nn.Linear(ENC_FEAT_DIM, ENC_HIDDEN_DIM)
         self.pos_encoder = PositionalEncoding(ENC_HIDDEN_DIM, dropout=DROPOUT)
-        encoder_layer = TransformerEncoderLayer(d_model=ENC_HIDDEN_DIM, nhead=NUM_HEADS, dim_feedforward=FFN_DIM, dropout=DROPOUT)
+        encoder_layer = TransformerEncoderLayer(d_model=ENC_HIDDEN_DIM, nhead=NUM_HEADS, 
+                                              dim_feedforward=FFN_DIM, dropout=DROPOUT, 
+                                              batch_first=False, norm_first=True)  # norm_first for better training
         self.transformer_encoder = TransformerEncoder(encoder_layer, num_layers=NUM_ENCODER_LAYERS)
 
         # Decoder: Standard TransformerDecoder
         self.token_emb = nn.Embedding(self.vocab_size, ENC_HIDDEN_DIM)
         self.pos_decoder = PositionalEncoding(ENC_HIDDEN_DIM, dropout=DROPOUT)
-        decoder_layer = TransformerDecoderLayer(d_model=ENC_HIDDEN_DIM, nhead=NUM_HEADS, dim_feedforward=FFN_DIM, dropout=DROPOUT)
+        decoder_layer = TransformerDecoderLayer(d_model=ENC_HIDDEN_DIM, nhead=NUM_HEADS, 
+                                              dim_feedforward=FFN_DIM, dropout=DROPOUT,
+                                              batch_first=False, norm_first=True)  # norm_first for better training
         self.transformer_decoder = TransformerDecoder(decoder_layer, num_layers=NUM_DECODER_LAYERS)
         self.output_proj = nn.Linear(ENC_HIDDEN_DIM, self.vocab_size)
 
