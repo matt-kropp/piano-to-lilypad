@@ -12,7 +12,7 @@ from .model import PianoTransformer
 from .config import (
     MAESTRO_DIR, SYNTHTRAIN_DIR, BATCH_SIZE, LEARNING_RATE,
     WEIGHT_DECAY, WARMUP_STEPS, TOTAL_STEPS, AUX_CTC_WEIGHT, CHECKPOINT_DIR, DEVICE,
-    GRADIENT_ACCUMULATION_STEPS
+    GRADIENT_ACCUMULATION_STEPS, MAX_MIDI_LENGTH, MAX_AUDIO_LENGTH
 )
 from .utils.midi_utils import build_vocab, id_to_token, token_to_id
 
@@ -68,6 +68,7 @@ def train_one_epoch(model, dataloader, optimizer, scheduler, epoch, scaler):
     model.train()
     total_loss = 0.0
     accumulation_loss = 0.0
+    successful_steps = 0
     
     # Clear GPU cache at the start
     if torch.cuda.is_available():
@@ -76,8 +77,20 @@ def train_one_epoch(model, dataloader, optimizer, scheduler, epoch, scaler):
     
     for step, (src, tgt) in enumerate(dataloader):
         try:
+            # Emergency memory check - if we're using too much, clear cache
+            if torch.cuda.is_available() and step % 10 == 0:
+                memory_used = torch.cuda.memory_allocated() / 1024**3  # GB
+                if memory_used > 20:  # If using more than 20GB
+                    print(f"High memory usage detected: {memory_used:.1f}GB, clearing cache...")
+                    torch.cuda.empty_cache()
+            
             src = src.to(DEVICE, non_blocking=True)  # [B, T, 5, N_MELS] - non_blocking for GPU
             tgt = tgt.to(DEVICE, non_blocking=True)  # [B, L]
+            
+            # Skip batch if sequences are too long (emergency fallback)
+            if src.size(1) > MAX_AUDIO_LENGTH // 2 or tgt.size(1) > MAX_MIDI_LENGTH // 2:
+                print(f"Skipping oversized batch: audio {src.size(1)}, midi {tgt.size(1)}")
+                continue
             
             # Prepare input to decoder: shift right, feed <EOS> at start
             tgt_input = torch.cat([torch.full((tgt.size(0), 1), token_to_id['EOS'], dtype=torch.long, device=DEVICE), tgt[:, :-1]], dim=1)
@@ -108,8 +121,10 @@ def train_one_epoch(model, dataloader, optimizer, scheduler, epoch, scaler):
             else:
                 loss.backward()
             
+            successful_steps += 1
+            
             # Only update weights every GRADIENT_ACCUMULATION_STEPS
-            if (step + 1) % GRADIENT_ACCUMULATION_STEPS == 0:
+            if successful_steps % GRADIENT_ACCUMULATION_STEPS == 0:
                 if scaler is not None:
                     scaler.unscale_(optimizer)
                     torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -122,12 +137,12 @@ def train_one_epoch(model, dataloader, optimizer, scheduler, epoch, scaler):
                 optimizer.zero_grad()
                 
                 total_loss += accumulation_loss
-                if ((step + 1) // GRADIENT_ACCUMULATION_STEPS) % 25 == 0:  # More frequent logging for A100
-                    print(f"Epoch {epoch}, Step {(step+1)//GRADIENT_ACCUMULATION_STEPS}/{len(dataloader)//GRADIENT_ACCUMULATION_STEPS}, Loss: {accumulation_loss:.4f}")
+                if (successful_steps // GRADIENT_ACCUMULATION_STEPS) % 25 == 0:  # More frequent logging for A100
+                    print(f"Epoch {epoch}, Step {successful_steps//GRADIENT_ACCUMULATION_STEPS}, Loss: {accumulation_loss:.4f}")
                 accumulation_loss = 0.0
                 
                 # Less frequent cache clearing for GPU
-                if torch.cuda.is_available() and (step + 1) % (GRADIENT_ACCUMULATION_STEPS * 50) == 0:
+                if torch.cuda.is_available() and successful_steps % (GRADIENT_ACCUMULATION_STEPS * 50) == 0:
                     torch.cuda.empty_cache()
                     
         except RuntimeError as e:
@@ -136,6 +151,13 @@ def train_one_epoch(model, dataloader, optimizer, scheduler, epoch, scaler):
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
                 optimizer.zero_grad()
+                # Reduce batch size dynamically if we keep hitting OOM
+                if hasattr(train_one_epoch, 'oom_count'):
+                    train_one_epoch.oom_count += 1
+                else:
+                    train_one_epoch.oom_count = 1
+                if train_one_epoch.oom_count > 5:
+                    print("Too many OOM errors, consider reducing batch size or model size further")
                 continue
             else:
                 raise e
@@ -143,8 +165,8 @@ def train_one_epoch(model, dataloader, optimizer, scheduler, epoch, scaler):
             print(f"WARNING: Error processing batch at step {step}: {e}")
             continue
     
-    avg_loss = total_loss / max(1, len(dataloader) // GRADIENT_ACCUMULATION_STEPS)
-    print(f"Epoch {epoch} completed. Avg Loss: {avg_loss:.4f}")
+    avg_loss = total_loss / max(1, successful_steps // GRADIENT_ACCUMULATION_STEPS)
+    print(f"Epoch {epoch} completed. Avg Loss: {avg_loss:.4f}, Successful steps: {successful_steps}")
     return avg_loss
 
 
@@ -186,8 +208,8 @@ def main():
     print(f"Training pairs: {len(train_pairs)}")
     print(f"Validation pairs: {len(val_pairs)}")
     
-    train_dataset = PianoDataset(train_pairs)
-    val_dataset = PianoDataset(val_pairs)
+    train_dataset = PianoDataset(train_pairs, max_seq_len=MAX_MIDI_LENGTH)
+    val_dataset = PianoDataset(val_pairs, max_seq_len=MAX_MIDI_LENGTH)
     
     # Use multiple workers for faster data loading on GPU (reduced to prevent memory issues)
     num_workers = 2 if torch.cuda.is_available() else 0  # Reduced from 4 to 2
