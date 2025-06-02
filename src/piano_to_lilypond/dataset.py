@@ -25,7 +25,19 @@ class PianoDataset(Dataset):
         audio_path, midi_path = self.data_list[idx]
         
         try:
+            # Check file sizes before loading to prevent memory issues
+            audio_size = os.path.getsize(audio_path) / (1024 * 1024)  # Size in MB
+            if audio_size > 100:  # Skip very large files (>100MB)
+                raise ValueError(f"Audio file too large: {audio_size:.1f}MB")
+            
             wav = load_audio(audio_path, SAMPLE_RATE)
+            
+            # Early check for audio length to prevent processing huge files
+            estimated_frames = len(wav) // HOP_LENGTH
+            if estimated_frames > self.max_audio_len * 2:  # Allow some buffer but not too much
+                print(f"Warning: Audio file {audio_path} is very long ({estimated_frames} frames), skipping...")
+                raise ValueError(f"Audio too long: {estimated_frames} frames")
+            
             mel = compute_mel_spectrogram(wav, SAMPLE_RATE, N_MELS, HOP_LENGTH, WIN_LENGTH)
             
             # Limit audio length to prevent memory issues
@@ -50,8 +62,10 @@ class PianoDataset(Dataset):
                     frames.append(mel[:, tt])
                 stacked.append(np.stack(frames, axis=0))  # [5, N_MELS]
             src = np.stack(stacked, axis=0)  # [T, 5, N_MELS]
-            # Convert to torch.FloatTensor
+            
+            # Convert to torch.FloatTensor with memory cleanup
             src = torch.from_numpy(src).float()
+            del mel, stacked  # Clean up intermediate arrays
 
             # MIDI → token IDs
             token_seq = midi_to_token_sequence(midi_path)

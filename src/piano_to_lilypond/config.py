@@ -2,8 +2,8 @@ import os
 import torch
 
 # Data paths
-DATA_DIR = os.getenv("P2L_DATA_DIR", "./data")
-MAESTRO_DIR = os.path.join(DATA_DIR, "maestro/maestro-v3.0.0")  # Expect audio + MIDI pairs
+DATA_DIR = os.getenv("P2L_DATA_DIR", "/content/drive/MyDrive/p2l/data")
+MAESTRO_DIR = os.path.join(DATA_DIR, "maestro-v3.0.0")  # Expect audio + MIDI pairs
 SYNTHTRAIN_DIR = os.path.join(DATA_DIR, "synthetic")  # Synthetic MIDI renders
 
 # Audio processing
@@ -23,7 +23,7 @@ DROPOUT = 0.1
 VOCAB_SIZE = None  # to be set after tokenization
 
 # Training (Optimized for A100)
-BATCH_SIZE = 32  # Large batch size for A100
+BATCH_SIZE = 16  # Reduced from 32 to be more conservative with memory
 LEARNING_RATE = 2e-4  # Slightly higher for larger batches
 WEIGHT_DECAY = 1e-2
 WARMUP_STEPS = 5000  # Reduced since larger batches
@@ -31,7 +31,7 @@ TOTAL_STEPS = 100000  # Reduced since more efficient training
 AUX_CTC_WEIGHT = 0.3
 
 # Memory management (A100 optimized)
-MAX_AUDIO_LENGTH = 300000  # Much longer sequences (~2.7 minutes of audio)
+MAX_AUDIO_LENGTH = 150000  # Reduced to prevent worker memory issues (~1.3 minutes of audio)
 GRADIENT_ACCUMULATION_STEPS = 1  # No accumulation needed with large batch size
 
 # Inference
@@ -42,7 +42,7 @@ MAX_DECODING_STEPS = 10000
 LILYPOND_CMD = "lilypond"
 
 # Checkpointing
-CHECKPOINT_DIR = os.getenv("P2L_CKPT_DIR", "./checkpoints")
+CHECKPOINT_DIR = os.getenv("P2L_CKPT_DIR", "/content/drive/MyDrive/p2l/checkpoints")
 
 # Device
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"

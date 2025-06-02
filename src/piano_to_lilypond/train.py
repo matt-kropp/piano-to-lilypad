@@ -189,14 +189,27 @@ def main():
     train_dataset = PianoDataset(train_pairs)
     val_dataset = PianoDataset(val_pairs)
     
-    # Use multiple workers for faster data loading on GPU
-    num_workers = 4 if torch.cuda.is_available() else 0
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, 
-                            collate_fn=PianoDataset.collate_fn, num_workers=num_workers, 
-                            pin_memory=torch.cuda.is_available(), persistent_workers=torch.cuda.is_available())
-    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, 
-                          collate_fn=PianoDataset.collate_fn, num_workers=num_workers,
-                          pin_memory=torch.cuda.is_available(), persistent_workers=torch.cuda.is_available())
+    # Use multiple workers for faster data loading on GPU (reduced to prevent memory issues)
+    num_workers = 2 if torch.cuda.is_available() else 0  # Reduced from 4 to 2
+    pin_memory = torch.cuda.is_available()
+    
+    try:
+        train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, 
+                                collate_fn=PianoDataset.collate_fn, num_workers=num_workers, 
+                                pin_memory=pin_memory, persistent_workers=num_workers > 0,
+                                prefetch_factor=2 if num_workers > 0 else None)
+        val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, 
+                              collate_fn=PianoDataset.collate_fn, num_workers=num_workers,
+                              pin_memory=pin_memory, persistent_workers=num_workers > 0,
+                              prefetch_factor=2 if num_workers > 0 else None)
+    except Exception as e:
+        print(f"Warning: Failed to create DataLoader with {num_workers} workers: {e}")
+        print("Falling back to single-threaded data loading...")
+        num_workers = 0
+        train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, 
+                                collate_fn=PianoDataset.collate_fn, num_workers=0)
+        val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, 
+                              collate_fn=PianoDataset.collate_fn, num_workers=0)
 
     print("✅ Datasets created successfully")
     check_memory()
