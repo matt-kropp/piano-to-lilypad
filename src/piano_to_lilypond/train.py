@@ -70,6 +70,14 @@ def train_one_epoch(model, dataloader, optimizer, scheduler, epoch, scaler):
     accumulation_loss = 0.0
     successful_steps = 0
     
+    # Progress tracking
+    import time
+    epoch_start_time = time.time()
+    last_log_time = epoch_start_time
+    total_batches = len(dataloader)
+    
+    print(f"📊 Epoch {epoch}: Processing {total_batches} batches (batch size {BATCH_SIZE}, grad accum {GRADIENT_ACCUMULATION_STEPS})")
+    
     # Clear GPU cache at the start
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
@@ -77,12 +85,27 @@ def train_one_epoch(model, dataloader, optimizer, scheduler, epoch, scaler):
     
     for step, (src, tgt) in enumerate(dataloader):
         try:
+            # Progress reporting every 10 batches or every 30 seconds
+            current_time = time.time()
+            if step % 10 == 0 or (current_time - last_log_time) > 30:
+                elapsed = current_time - epoch_start_time
+                if step > 0:
+                    estimated_total = elapsed * total_batches / step
+                    remaining = estimated_total - elapsed
+                    print(f"  📈 Batch {step+1}/{total_batches} ({(step+1)/total_batches*100:.1f}%) | "
+                          f"Elapsed: {elapsed/60:.1f}m | ETA: {remaining/60:.1f}m")
+                else:
+                    print(f"  📈 Batch {step+1}/{total_batches} ({(step+1)/total_batches*100:.1f}%) | Starting...")
+                last_log_time = current_time
+            
             # Emergency memory check - if we're using too much, clear cache
-            if torch.cuda.is_available() and step % 10 == 0:
+            if torch.cuda.is_available() and step % 20 == 0:  # Check every 20 batches instead of 10
                 memory_used = torch.cuda.memory_allocated() / 1024**3  # GB
-                if memory_used > 30:  # Increased from 20GB - A100 has 40GB
-                    print(f"High memory usage detected: {memory_used:.1f}GB, clearing cache...")
+                if memory_used > 25:  # Warning threshold
+                    print(f"  🧠 GPU Memory: {memory_used:.1f}GB (clearing cache...)")
                     torch.cuda.empty_cache()
+                elif step % 50 == 0:  # Report memory every 50 batches
+                    print(f"  🧠 GPU Memory: {memory_used:.1f}GB")
             
             src = src.to(DEVICE, non_blocking=True)  # [B, T, 5, N_MELS] - non_blocking for GPU
             tgt = tgt.to(DEVICE, non_blocking=True)  # [B, L]
@@ -122,6 +145,8 @@ def train_one_epoch(model, dataloader, optimizer, scheduler, epoch, scaler):
             
             # Only update weights every GRADIENT_ACCUMULATION_STEPS
             if successful_steps % GRADIENT_ACCUMULATION_STEPS == 0:
+                optimizer_step = successful_steps // GRADIENT_ACCUMULATION_STEPS
+                
                 if scaler is not None:
                     scaler.unscale_(optimizer)
                     torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -134,8 +159,10 @@ def train_one_epoch(model, dataloader, optimizer, scheduler, epoch, scaler):
                 optimizer.zero_grad()
                 
                 total_loss += accumulation_loss
-                if (successful_steps // GRADIENT_ACCUMULATION_STEPS) % 25 == 0:  # More frequent logging for A100
-                    print(f"Epoch {epoch}, Step {successful_steps//GRADIENT_ACCUMULATION_STEPS}, Loss: {accumulation_loss:.4f}")
+                
+                # More frequent loss reporting
+                print(f"    ⚡ Optimizer Step {optimizer_step} (batch {step+1}) | Loss: {accumulation_loss:.4f} | LR: {scheduler.get_last_lr()[0]:.2e}")
+                
                 accumulation_loss = 0.0
                 
                 # Less frequent cache clearing for GPU
@@ -144,7 +171,7 @@ def train_one_epoch(model, dataloader, optimizer, scheduler, epoch, scaler):
                     
         except RuntimeError as e:
             if "out of memory" in str(e):
-                print(f"WARNING: Out of memory at step {step}, clearing cache and skipping batch")
+                print(f"❌ OUT OF MEMORY at batch {step+1}, clearing cache and skipping...")
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
                 optimizer.zero_grad()
@@ -154,16 +181,22 @@ def train_one_epoch(model, dataloader, optimizer, scheduler, epoch, scaler):
                 else:
                     train_one_epoch.oom_count = 1
                 if train_one_epoch.oom_count > 5:
-                    print("Too many OOM errors, consider reducing batch size or model size further")
+                    print("❌ Too many OOM errors, consider reducing batch size or model size further")
                 continue
             else:
                 raise e
         except Exception as e:
-            print(f"WARNING: Error processing batch at step {step}: {e}")
+            print(f"⚠️ Error processing batch {step+1}: {e}")
             continue
     
-    avg_loss = total_loss / max(1, successful_steps // GRADIENT_ACCUMULATION_STEPS)
-    print(f"Epoch {epoch} completed. Avg Loss: {avg_loss:.4f}, Successful steps: {successful_steps}")
+    # Epoch summary
+    epoch_time = time.time() - epoch_start_time
+    optimizer_steps = successful_steps // GRADIENT_ACCUMULATION_STEPS
+    avg_loss = total_loss / max(1, optimizer_steps)
+    print(f"✅ Epoch {epoch} completed in {epoch_time/60:.1f} minutes")
+    print(f"   📊 {successful_steps} successful batches, {optimizer_steps} optimizer steps")
+    print(f"   📉 Average Loss: {avg_loss:.4f}")
+    print(f"   ⚡ Throughput: {successful_steps/epoch_time:.1f} batches/sec")
     return avg_loss
 
 
