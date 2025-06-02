@@ -257,18 +257,20 @@ def main():
     val_dataset = PianoDataset(val_pairs, max_seq_len=MAX_MIDI_LENGTH)
     
     # Use multiple workers for faster data loading on GPU (reduced to prevent memory issues)
-    num_workers = 2 if torch.cuda.is_available() else 0  # Reduced from 4 to 2
+    num_workers = 1 if torch.cuda.is_available() else 0  # Reduced from 2 to 1 for stability
     pin_memory = torch.cuda.is_available()
     
     try:
         train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, 
                                 collate_fn=PianoDataset.collate_fn, num_workers=num_workers, 
                                 pin_memory=pin_memory, persistent_workers=num_workers > 0,
-                                prefetch_factor=2 if num_workers > 0 else None)
+                                prefetch_factor=1 if num_workers > 0 else None,  # Reduced from 2 to 1
+                                timeout=60)  # Add timeout to prevent hanging
         val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, 
                               collate_fn=PianoDataset.collate_fn, num_workers=num_workers,
                               pin_memory=pin_memory, persistent_workers=num_workers > 0,
-                              prefetch_factor=2 if num_workers > 0 else None)
+                              prefetch_factor=1 if num_workers > 0 else None,  # Reduced from 2 to 1
+                              timeout=60)  # Add timeout to prevent hanging
     except Exception as e:
         print(f"Warning: Failed to create DataLoader with {num_workers} workers: {e}")
         print("Falling back to single-threaded data loading...")
