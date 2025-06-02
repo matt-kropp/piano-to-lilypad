@@ -87,10 +87,7 @@ def train_one_epoch(model, dataloader, optimizer, scheduler, epoch, scaler):
             src = src.to(DEVICE, non_blocking=True)  # [B, T, 5, N_MELS] - non_blocking for GPU
             tgt = tgt.to(DEVICE, non_blocking=True)  # [B, L]
             
-            # Skip batch if sequences are too long (emergency fallback)
-            if src.size(1) > MAX_AUDIO_LENGTH * 0.8 or tgt.size(1) > MAX_MIDI_LENGTH * 0.8:  # More lenient thresholds
-                print(f"Skipping oversized batch: audio {src.size(1)}, midi {tgt.size(1)}")
-                continue
+            # Dataset already handles length limiting, no need for double-check here
             
             # Prepare input to decoder: shift right, feed <EOS> at start
             tgt_input = torch.cat([torch.full((tgt.size(0), 1), token_to_id['EOS'], dtype=torch.long, device=DEVICE), tgt[:, :-1]], dim=1)

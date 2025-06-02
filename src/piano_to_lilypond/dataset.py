@@ -34,7 +34,7 @@ class PianoDataset(Dataset):
             
             # Early check for audio length to prevent processing huge files
             estimated_frames = len(wav) // HOP_LENGTH
-            if estimated_frames > self.max_audio_len * 2:  # Allow some buffer but not too much
+            if estimated_frames > self.max_audio_len * 3:  # More permissive - allow up to 3x max length since we chunk
                 print(f"Warning: Audio file {audio_path} is very long ({estimated_frames} frames), skipping...")
                 raise ValueError(f"Audio too long: {estimated_frames} frames")
             
