@@ -20,24 +20,24 @@ WIN_LENGTH = 2048  # ~46ms
 # NUM_ATTENTION_HEADS = 16
 # FEEDFORWARD_DIM = 4096
 
-# Option 2: Medium setup - FOR LATER (~90M params)
-# HIDDEN_DIM = 768
-# NUM_ENCODER_LAYERS = 12
-# NUM_DECODER_LAYERS = 12
-# NUM_ATTENTION_HEADS = 12
-# FEEDFORWARD_DIM = 3072
-
-# Option 3: Conservative setup - CURRENT ACTIVE (~45M params)
-HIDDEN_DIM = 512
-NUM_ENCODER_LAYERS = 8
-NUM_DECODER_LAYERS = 8
-NUM_ATTENTION_HEADS = 8
-FEEDFORWARD_DIM = 2048
+# Option 2: Medium setup - CURRENT ACTIVE (~90M params)
+HIDDEN_DIM = 768
+NUM_ENCODER_LAYERS = 12
+NUM_DECODER_LAYERS = 12
+NUM_ATTENTION_HEADS = 12
+FEEDFORWARD_DIM = 3072
 DROPOUT = 0.1
 
+# Option 3: Conservative setup (~45M params) - TOO CONSERVATIVE FOR A100
+# HIDDEN_DIM = 512
+# NUM_ENCODER_LAYERS = 8
+# NUM_DECODER_LAYERS = 8
+# NUM_ATTENTION_HEADS = 8
+# FEEDFORWARD_DIM = 2048
+
 # Training (Optimized for A100 - windowing approach)
-BATCH_SIZE = 12  # Reduced from 24 to be more conservative
-LEARNING_RATE = 1e-4  # Slightly reduced for smaller batch
+BATCH_SIZE = 64  # Increased from 12 to 64 - should still be safe with 40GB
+LEARNING_RATE = 2e-4  # Increased for larger batch
 NUM_EPOCHS = 100
 WARMUP_STEPS = 2000
 WEIGHT_DECAY = 1e-2
@@ -49,7 +49,7 @@ WINDOW_SIZE_SECONDS = 30    # Fixed 30-second windows
 WINDOW_OVERLAP_SECONDS = 5  # 5-second overlap between windows
 MAX_AUDIO_LENGTH = int(WINDOW_SIZE_SECONDS * SAMPLE_RATE / HOP_LENGTH)  # ~30k frames for 30 seconds
 MAX_MIDI_LENGTH = 3000      # Reduced to match 30-second windows
-GRADIENT_ACCUMULATION_STEPS = 4  # Increased to maintain effective batch size
+GRADIENT_ACCUMULATION_STEPS = 1  # Reduced since batch size is much larger
 
 # Inference
 BEAM_SIZE = 3
