@@ -3,13 +3,16 @@ import random
 import torch
 from torch.utils.data import Dataset
 import numpy as np
+import pickle
+import hashlib
+import json
 from .utils.audio_utils import load_audio, compute_mel_spectrogram
 from .utils.midi_utils import midi_to_token_sequence, token_to_id, build_vocab
 from .config import (SAMPLE_RATE, N_MELS, HOP_LENGTH, WIN_LENGTH, MAX_AUDIO_LENGTH, 
                      WINDOW_SIZE_SECONDS, WINDOW_OVERLAP_SECONDS, MAX_MIDI_LENGTH)
 
 class PianoDataset(Dataset):
-    def __init__(self, data_list, max_seq_len=None, max_audio_len=None):
+    def __init__(self, data_list, max_seq_len=None, max_audio_len=None, cache_dir=None):
         """
         data_list: list of tuples (audio_path, midi_path)
         Creates windowed examples from each audio/MIDI pair
@@ -21,15 +24,79 @@ class PianoDataset(Dataset):
         self.overlap_samples = int(WINDOW_OVERLAP_SECONDS * SAMPLE_RATE)
         self.step_samples = self.window_samples - self.overlap_samples
         
-        # Pre-compute all windows for efficient indexing
-        self.windows = self._create_windows()
+        # Setup caching
+        self.cache_dir = cache_dir or os.path.join(os.getcwd(), '.dataset_cache')
+        os.makedirs(self.cache_dir, exist_ok=True)
+        
+        # Pre-compute all windows for efficient indexing (with caching)
+        self.windows = self._create_windows_cached()
         print(f"Created {len(self.windows)} windowed examples from {len(data_list)} files")
+
+    def _get_cache_path(self):
+        """Generate cache file path based on dataset configuration"""
+        # Create a hash of the dataset configuration
+        config_str = f"{len(self.data_list)}_{WINDOW_SIZE_SECONDS}_{WINDOW_OVERLAP_SECONDS}"
+        # Include first and last file paths to detect dataset changes
+        if self.data_list:
+            config_str += f"_{self.data_list[0][0]}_{self.data_list[-1][0]}"
+        cache_hash = hashlib.md5(config_str.encode()).hexdigest()[:16]
+        return os.path.join(self.cache_dir, f"windows_cache_{cache_hash}.pkl")
+
+    def _is_cache_valid(self, cache_path):
+        """Check if cache is still valid (files haven't changed)"""
+        if not os.path.exists(cache_path):
+            return False
+        
+        try:
+            cache_mtime = os.path.getmtime(cache_path)
+            
+            # Check if any source files are newer than cache
+            for audio_path, midi_path in self.data_list[:10]:  # Sample check for speed
+                if os.path.exists(audio_path) and os.path.getmtime(audio_path) > cache_mtime:
+                    return False
+                if os.path.exists(midi_path) and os.path.getmtime(midi_path) > cache_mtime:
+                    return False
+            return True
+        except:
+            return False
+
+    def _create_windows_cached(self):
+        """Create windows with caching support"""
+        cache_path = self._get_cache_path()
+        
+        # Try to load from cache
+        if self._is_cache_valid(cache_path):
+            try:
+                print(f"Loading windowed dataset from cache: {cache_path}")
+                with open(cache_path, 'rb') as f:
+                    windows = pickle.load(f)
+                print(f"✅ Loaded {len(windows)} windows from cache")
+                return windows
+            except Exception as e:
+                print(f"⚠️ Failed to load cache: {e}, regenerating...")
+
+        # Generate windows and cache them
+        print(f"Creating windowed dataset (this may take a few minutes for {len(self.data_list)} files)...")
+        windows = self._create_windows()
+        
+        # Save to cache
+        try:
+            with open(cache_path, 'wb') as f:
+                pickle.dump(windows, f)
+            print(f"💾 Cached windowed dataset to: {cache_path}")
+        except Exception as e:
+            print(f"⚠️ Failed to save cache: {e}")
+        
+        return windows
 
     def _create_windows(self):
         """Pre-compute all valid windows from the dataset"""
         windows = []
         
-        for audio_path, midi_path in self.data_list:
+        for i, (audio_path, midi_path) in enumerate(self.data_list):
+            if i % 100 == 0:  # Progress indicator
+                print(f"Processing file {i+1}/{len(self.data_list)}: {os.path.basename(audio_path)}")
+                
             try:
                 # Quick check - skip obviously huge files
                 audio_size = os.path.getsize(audio_path) / (1024 * 1024)  # MB
@@ -148,3 +215,35 @@ class PianoDataset(Dataset):
             stacked[i, :T] = s
             
         return stacked, padded_tgts
+
+    def clear_cache(self):
+        """Clear the dataset cache"""
+        cache_path = self._get_cache_path()
+        if os.path.exists(cache_path):
+            os.remove(cache_path)
+            print(f"🗑️ Cleared cache: {cache_path}")
+        else:
+            print("No cache to clear")
+
+    def cache_info(self):
+        """Display cache information"""
+        cache_path = self._get_cache_path()
+        if os.path.exists(cache_path):
+            size_mb = os.path.getsize(cache_path) / (1024 * 1024)
+            mtime = os.path.getmtime(cache_path)
+            print(f"📁 Cache file: {cache_path}")
+            print(f"📏 Cache size: {size_mb:.1f} MB")
+            print(f"🕒 Cache created: {os.path.ctime(mtime)}")
+        else:
+            print("No cache file exists")
+
+    @staticmethod
+    def clear_all_caches(cache_dir=None):
+        """Clear all dataset caches"""
+        cache_dir = cache_dir or os.path.join(os.getcwd(), '.dataset_cache')
+        if os.path.exists(cache_dir):
+            import shutil
+            shutil.rmtree(cache_dir)
+            print(f"🗑️ Cleared all caches in: {cache_dir}")
+        else:
+            print("No cache directory exists")
