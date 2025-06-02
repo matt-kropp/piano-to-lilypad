@@ -178,6 +178,14 @@ def save_checkpoint(model, optimizer, scheduler, step, path):
 
 
 def main():
+    # Protect against multiprocessing issues on some systems
+    try:
+        import multiprocessing as mp
+        mp.set_start_method('spawn', force=True)
+    except RuntimeError:
+        # Already set, or not needed on this system
+        pass
+    
     print("🚀 Starting Piano to LilyPond Training")
     print("=" * 50)
     
