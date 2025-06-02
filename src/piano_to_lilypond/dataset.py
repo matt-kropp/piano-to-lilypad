@@ -97,19 +97,27 @@ class PianoDataset(Dataset):
     def collate_fn(batch):
         # batch: list of (src, tgt)
         srcs, tgts = zip(*batch)
+        
         # Pad tgt sequences
         tgt_lens = [len(t) for t in tgts]
         max_tgt_len = max(tgt_lens)
         padded_tgts = torch.full((len(tgts), max_tgt_len), token_to_id['PAD'], dtype=torch.long)
         for i, t in enumerate(tgts):
             padded_tgts[i, :len(t)] = t
-        # srcs are varying length in time dimension; pad them as well
+        
+        # Pad src sequences - varying length in time dimension
         src_lens = [s.shape[0] for s in srcs]
         max_src_len = max(src_lens)
-        # src shape: (T, 5, N_MELS) → we want (B, T, 5, N_MELS)
+        
+        # Get dimensions from first tensor: (T, 5, N_MELS)
         B = len(srcs)
-        stacked = torch.zeros((B, max_src_len, 5, N_MELS), dtype=torch.float)
+        stack_size = srcs[0].shape[1]  # Should be 5
+        n_mels = srcs[0].shape[2]      # Should be N_MELS (229)
+        
+        # Create padded tensor: (B, T, 5, N_MELS)
+        stacked = torch.zeros((B, max_src_len, stack_size, n_mels), dtype=torch.float)
         for i, s in enumerate(srcs):
             T = s.shape[0]
             stacked[i, :T] = s
+            
         return stacked, padded_tgts
