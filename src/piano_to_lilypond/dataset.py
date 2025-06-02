@@ -27,7 +27,7 @@ class PianoDataset(Dataset):
         try:
             # Check file sizes before loading to prevent memory issues
             audio_size = os.path.getsize(audio_path) / (1024 * 1024)  # Size in MB
-            if audio_size > 100:  # Skip very large files (>100MB)
+            if audio_size > 500:  # Increased from 100MB - only skip truly massive files
                 raise ValueError(f"Audio file too large: {audio_size:.1f}MB")
             
             wav = load_audio(audio_path, SAMPLE_RATE)

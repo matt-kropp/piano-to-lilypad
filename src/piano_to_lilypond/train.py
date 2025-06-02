@@ -80,7 +80,7 @@ def train_one_epoch(model, dataloader, optimizer, scheduler, epoch, scaler):
             # Emergency memory check - if we're using too much, clear cache
             if torch.cuda.is_available() and step % 10 == 0:
                 memory_used = torch.cuda.memory_allocated() / 1024**3  # GB
-                if memory_used > 20:  # If using more than 20GB
+                if memory_used > 30:  # Increased from 20GB - A100 has 40GB
                     print(f"High memory usage detected: {memory_used:.1f}GB, clearing cache...")
                     torch.cuda.empty_cache()
             
@@ -88,7 +88,7 @@ def train_one_epoch(model, dataloader, optimizer, scheduler, epoch, scaler):
             tgt = tgt.to(DEVICE, non_blocking=True)  # [B, L]
             
             # Skip batch if sequences are too long (emergency fallback)
-            if src.size(1) > MAX_AUDIO_LENGTH // 2 or tgt.size(1) > MAX_MIDI_LENGTH // 2:
+            if src.size(1) > MAX_AUDIO_LENGTH * 0.8 or tgt.size(1) > MAX_MIDI_LENGTH * 0.8:  # More lenient thresholds
                 print(f"Skipping oversized batch: audio {src.size(1)}, midi {tgt.size(1)}")
                 continue
             

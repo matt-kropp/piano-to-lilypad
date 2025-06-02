@@ -12,42 +12,42 @@ N_MELS = 229
 HOP_LENGTH = 512  # ~11.6ms
 WIN_LENGTH = 2048  # ~46ms
 
-# Model architecture (A100 optimized - conservative memory)
-# Option 1: Full A100 setup (~180M params) - TOO BIG FOR CURRENT MEMORY
+# Model architecture (A100 optimized - balanced)
+# Option 1: Full A100 setup (~180M params) - FOR LATER WHEN STABLE
 # HIDDEN_DIM = 1024
 # NUM_ENCODER_LAYERS = 16
 # NUM_DECODER_LAYERS = 16
 # NUM_ATTENTION_HEADS = 16
 # FEEDFORWARD_DIM = 4096
 
-# Option 2: Medium setup if memory issues (~90M params)
-# HIDDEN_DIM = 768
-# NUM_ENCODER_LAYERS = 12
-# NUM_DECODER_LAYERS = 12
-# NUM_ATTENTION_HEADS = 12
-# FEEDFORWARD_DIM = 3072
-
-# Option 3: Conservative setup (~45M params) - CURRENT ACTIVE
-HIDDEN_DIM = 512
-NUM_ENCODER_LAYERS = 8
-NUM_DECODER_LAYERS = 8
-NUM_ATTENTION_HEADS = 8
-FEEDFORWARD_DIM = 2048
+# Option 2: Medium setup - CURRENT ACTIVE (~90M params)
+HIDDEN_DIM = 768
+NUM_ENCODER_LAYERS = 12
+NUM_DECODER_LAYERS = 12
+NUM_ATTENTION_HEADS = 12
+FEEDFORWARD_DIM = 3072
 DROPOUT = 0.1
 
-# Training (Optimized for A100 with memory constraints)
-BATCH_SIZE = 8  # Reduced for memory safety
-LEARNING_RATE = 1e-4  # Reduced due to smaller effective batch initially
+# Option 3: Conservative setup (~45M params) - TOO SMALL
+# HIDDEN_DIM = 512
+# NUM_ENCODER_LAYERS = 8
+# NUM_DECODER_LAYERS = 8
+# NUM_ATTENTION_HEADS = 8
+# FEEDFORWARD_DIM = 2048
+
+# Training (Optimized for A100 - balanced memory usage)
+BATCH_SIZE = 16  # Increased back up to utilize A100 better
+LEARNING_RATE = 1.5e-4  # Slightly increased for larger batch
 NUM_EPOCHS = 100
 WARMUP_STEPS = 2000
 WEIGHT_DECAY = 1e-2
 TOTAL_STEPS = 100000  # Reduced since more efficient training
 AUX_CTC_WEIGHT = 0.3
 
-# Memory management (A100 optimized - very conservative)
-MAX_AUDIO_LENGTH = 50000  # Further reduced (~25 seconds of audio)
-MAX_MIDI_LENGTH = 5000    # Limit MIDI sequence length
-GRADIENT_ACCUMULATION_STEPS = 4  # Accumulate 4 steps to maintain effective batch size of 32
+# Memory management (A100 optimized - balanced)
+MAX_AUDIO_LENGTH = 100000  # Increased from 50k (~50 seconds of audio)
+MAX_MIDI_LENGTH = 8000     # Increased from 5k tokens
+GRADIENT_ACCUMULATION_STEPS = 2  # Reduced from 4 (effective batch size = 32)
 
 # Inference
 BEAM_SIZE = 3
