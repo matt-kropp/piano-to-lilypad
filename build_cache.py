@@ -29,6 +29,7 @@ def build_cache():
         return False
     
     # Split into train/val (same as training script)
+    random.seed(42)  # Fixed seed for consistent splits
     random.shuffle(maestro_pairs)
     split = int(0.95 * len(maestro_pairs))
     train_pairs = maestro_pairs[:split]

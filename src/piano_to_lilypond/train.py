@@ -197,6 +197,8 @@ def main():
         print("❌ No training data found! Please check MAESTRO_DIR path.")
         return
     
+    # Set fixed random seed for consistent train/val split (important for caching)
+    random.seed(42)
     random.shuffle(maestro_pairs)
     split = int(0.95 * len(maestro_pairs))
     train_pairs = maestro_pairs[:split]
@@ -204,8 +206,11 @@ def main():
     
     print(f"Training pairs: {len(train_pairs)}")
     print(f"Validation pairs: {len(val_pairs)}")
+    print(f"Cache directory: {os.path.join(os.getcwd(), '.dataset_cache')}")
     
+    print("🗂️ Creating training dataset...")
     train_dataset = PianoDataset(train_pairs, max_seq_len=MAX_MIDI_LENGTH)
+    print("🗂️ Creating validation dataset...")
     val_dataset = PianoDataset(val_pairs, max_seq_len=MAX_MIDI_LENGTH)
     
     # Use multiple workers for faster data loading on GPU (reduced to prevent memory issues)
